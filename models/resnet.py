@@ -210,5 +210,8 @@ class Multi_ResNet(nn.Module):
 def multi_resnet50_kd(num_classes=1000):
     return Multi_ResNet(BottleneckBlock, [3,4,6,3], num_classes=num_classes)
 
+def multi_resnet32_kd(num_classes=100):
+    return Multi_ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_classes)
+
 def multi_resnet18_kd(num_classes=1000):
     return Multi_ResNet(BasicBlock, [2,2,2,2], num_classes=num_classes)
