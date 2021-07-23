@@ -2,3 +2,4 @@ save_checkpoints/
 runs_alpha01/
 *.pyc
 __pycache__/
+runs*
