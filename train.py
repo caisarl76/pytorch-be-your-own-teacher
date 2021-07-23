@@ -59,7 +59,7 @@ def parse_args():
     parser.add_argument('--warm-up', action='store_true',
                         help='for n = 18, the model needs to warm up for 400 '
                              'iterations')
-    parser.add_argument('--save-folder', default='save_checkpoints/', type=str,
+    parser.add_argument('--save-path', default='runs/', type=str,
                         help='folder to save the checkpoints')
     parser.add_argument('--summary-folder', default='runs_alpha01/', type=str,
                         help='folder to save the summary')
@@ -80,9 +80,16 @@ def parse_args():
 
 def main():
     args = parse_args()
-    save_path = args.save_path = os.path.join(args.save_folder, args.arch)
+
+    if args.dataset.endswith('lt'):
+        dataset = '_'.join([args.dataset, args.imb_type, (str)(args.imb_ratio)])
+    else:
+        dataset = args.dataset
+
+    save_path = args.save_path = os.path.join(args.save_path, dataset, args.arch)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
+
     args.logger_file = os.path.join(save_path, 'log_{}.txt'.format(args.cmd))
     handlers = [logging.FileHandler(args.logger_file, mode='w'),
                 logging.StreamHandler()]
