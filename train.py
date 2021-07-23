@@ -108,7 +108,10 @@ def run_test(args):
         model = models.__dict__[args.arch](num_classes=10)
     else:
         raise NotImplementedError
-    model = torch.nn.DataParallel(model).cuda()
+    if args.parallel:
+        model = torch.nn.DataParallel(model).cuda()
+    else:
+        model = model.cuda()
 
     # load checkpoint
     if args.resume:
