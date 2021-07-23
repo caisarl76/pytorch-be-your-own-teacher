@@ -31,7 +31,7 @@ def parse_args():
                         choices=['cifar10', 'cifar100', 'cifar10_lt', 'cifar100_lt'],
                         help='dataset choice')
     parser.add_argument('--imb_type', default="exp", type=str, help='imbalance type')
-    parser.add_argument('--imb_factor', default=0.1, type=float, help='imbalance factor')
+    parser.add_argument('--imb_ratio', default=0.1, type=float, help='imbalance factor')
 
     parser.add_argument('--parallel', action='store_true')
     parser.add_argument('--workers', default=8, type=int, metavar='N',
