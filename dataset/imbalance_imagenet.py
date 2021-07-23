@@ -4,7 +4,7 @@ import numpy as np
 import os, sys
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Dataset, Sampler
-from base import BaseDataLoader
+import base_dataloader
 from PIL import Image
 
 
