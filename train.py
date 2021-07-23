@@ -30,6 +30,9 @@ def parse_args():
     parser.add_argument('--dataset', '-d', type=str, default='cifar100',
                         choices=['cifar10', 'cifar100', 'cifar10_lt', 'cifar100_lt'],
                         help='dataset choice')
+    parser.add_argument('--imb_type', default="exp", type=str, help='imbalance type')
+    parser.add_argument('--imb_factor', default=0.1, type=float, help='imbalance factor')
+
     parser.add_argument('--workers', default=8, type=int, metavar='N',
                         help='number of data loading workers (default: 4 )')
     parser.add_argument('--epoch', default=200, type=int,
