@@ -197,7 +197,7 @@ def run_training(args):
 
     else:
         raise NotImplementedError
-
+    print(train_dataset.get_cls_num_list())
     criterion = nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
