@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument('arch', metavar='ARCH', default='multi_resnet50_kd',
                         help='model architecture')
     parser.add_argument('--dataset', '-d', type=str, default='cifar100',
-                        choices=['cifar10', 'cifar100', 'cifar10_lt', 'cifar100_lt'],
+                        choices=['cifar10', 'cifar100', 'cifar10_lt', 'cifar100_lt', 'imagenet_lt'],
                         help='dataset choice')
     parser.add_argument('--imb_type', default="exp", type=str, help='imbalance type')
     parser.add_argument('--imb_ratio', default=0.1, type=float, help='imbalance factor')
@@ -81,6 +81,8 @@ def parse_args():
 def main():
     args = parse_args()
 
+    if args.dataset.startswith('imagenet'):
+        dataset = args.dataset
     if args.dataset.endswith('lt'):
         dataset = '_'.join([args.dataset, args.imb_type, (str)(args.imb_ratio)])
     else:
@@ -110,7 +112,9 @@ def main():
 
 def run_test(args):
     writer = SummaryWriter(args.summary_folder)
-    if args.dataset.startswith('cifar100'):
+    if args.dataset.startswith('imagenet'):
+        model = models.__dict__[args.arch](num_classes=1000)
+    elif args.dataset.startswith('cifar100'):
         model = models.__dict__[args.arch](num_classes=100)
     elif args.dataset.startswith('cifar10'):
         model = models.__dict__[args.arch](num_classes=10)
@@ -138,6 +142,9 @@ def run_test(args):
     cudnn.benchmark = True
 
     # load dataset
+    # if args.dataset =='imagenet_lt':
+    #      test_loader =
+
     if args.dataset == 'cifar100':
         test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
                                                     num_workers=args.workers)
@@ -182,6 +189,7 @@ def run_training(args):
     elif args.dataset == 'cifar100_lt':
         train_dataset = IMBALANCECIFAR100(phase='train', root=args.data_dir, imb_type=args.imb_type,
                                           imbalance_ratio=args.imb_ratio)
+        print(train_dataset.get_cls_num_list())
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                                                    num_workers=args.workers, pin_memory=True)
         test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
