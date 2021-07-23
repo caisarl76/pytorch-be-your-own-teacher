@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--parallel', action='store_true')
     parser.add_argument('--workers', default=8, type=int, metavar='N',
                         help='number of data loading workers (default: 4 )')
-    parser.add_argument('--epoch', default=200, type=int,
+    parser.add_argument('--epochs', default=200, type=int,
                         help='number of total iterations (default: 64,000)')
     parser.add_argument('--start-epoch', default=0, type=int,
                         help='manual iter number (useful on restarts)')
