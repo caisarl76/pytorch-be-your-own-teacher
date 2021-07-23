@@ -145,4 +145,4 @@ class ImageNetLTDataLoader(DataLoader):
 
 
 if __name__=="__main__":
-    train_loader = ImageNetLTDataLoader('./data/', batch_size=10, shuffle=True, num_workers=0)
+    train_loader = ImageNetLTDataLoader('./data/imagenet', batch_size=10, shuffle=True, num_workers=0)
