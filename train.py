@@ -196,7 +196,7 @@ def run_training(args):
     end = time.time()
     model.train()
     step = 0
-    for current_epoch in range(args.start_epoch, args.epoch):
+    for current_epoch in range(args.start_epoch, args.epochs):
         batch_time = AverageMeter()
         data_time = AverageMeter()
         losses = AverageMeter()
