@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
-
+import torch.utils.data
 import os
 import shutil
 import argparse
@@ -12,10 +12,12 @@ import math
 
 import models.resnet as models
 from dataset.data import *
+from dataset.imbalance_cifar import *
 
 import torchvision.models.utils as utils
-from tensorboardX import SummaryWriter 
+from tensorboardX import SummaryWriter
 import numpy as np
+
 
 def parse_args():
     # hyper-parameters are from ResNet paper
@@ -26,7 +28,7 @@ def parse_args():
     parser.add_argument('arch', metavar='ARCH', default='multi_resnet50_kd',
                         help='model architecture')
     parser.add_argument('--dataset', '-d', type=str, default='cifar100',
-                        choices=['cifar10', 'cifar100'],
+                        choices=['cifar10', 'cifar100', 'cifar10_lt', 'cifar100_lt'],
                         help='dataset choice')
     parser.add_argument('--workers', default=8, type=int, metavar='N',
                         help='number of data loading workers (default: 4 )')
@@ -60,7 +62,7 @@ def parse_args():
     parser.add_argument('--eval-every', default=1000, type=int,
                         help='evaluate model every (default: 1000) iterations')
 
-    #kd parameter
+    # kd parameter
     parser.add_argument('--temperature', default=3, type=int,
                         help='temperature to smooth the logits')
     parser.add_argument('--alpha', default=0.1, type=float,
@@ -70,6 +72,7 @@ def parse_args():
 
     args = parser.parse_args()
     return args
+
 
 def main():
     args = parse_args()
@@ -83,11 +86,11 @@ def main():
                         datefmt='%m-%d-%y %H:%M',
                         format='%(asctime)s:%(message)s',
                         handlers=handlers)
-    
+
     if args.cmd == 'train':
         logging.info('start training {}'.format(args.arch))
         run_training(args)
-    
+
     elif args.cmd == 'test':
         logging.info('start evaluating {} with checkpoints from {}'.format(
             args.arch, args.resume))
@@ -96,8 +99,10 @@ def main():
 
 def run_test(args):
     writer = SummaryWriter(args.summary_folder)
-    if args.dataset == 'cifar100':
+    if args.dataset.startswith('cifar100'):
         model = models.__dict__[args.arch](num_classes=100)
+    elif args.dataset.startswith('cifar10'):
+        model = models.__dict__[args.arch](num_classes=10)
     else:
         raise NotImplementedError
     model = torch.nn.DataParallel(model).cuda()
@@ -115,22 +120,28 @@ def run_test(args):
         else:
             logging.info('=> no checkpoint found at `{}`'.format(args.resume))
             exit()
-    
+
     cudnn.benchmark = True
 
-    #load dataset
+    # load dataset
     if args.dataset == 'cifar100':
-        test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size, 
-                                                        num_workers=args.workers)
+        test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
+                                                    num_workers=args.workers)
+    # elif args.dataset == 'cifar10':
+    #     test_loader = prepare_cifar10_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
+    #                                                 num_workers=args.workers)
     else:
         raise NotImplementedError
     criterion = nn.CrossEntropyLoss().cuda()
     validate(args, test_loader, model, criterion)
 
+
 def run_training(args):
     writer = SummaryWriter(args.summary_folder)
-    if args.dataset == 'cifar100':
+    if args.dataset.startswith('cifar100'):
         model = models.__dict__[args.arch](num_classes=100)
+    elif args.dataset.startswith('cifar10'):
+        model = models.__dict__[args.arch](num_classes=10)
     else:
         raise NotImplementedError
     model = torch.nn.DataParallel(model).cuda()
@@ -147,19 +158,26 @@ def run_training(args):
                 args.resume, checkpoint['epoch']))
         else:
             logging.info('=> no checkpoint found at `{}`'.format(args.resume))
-    
+
     cudnn.benchmark = True
     if args.dataset == 'cifar100':
-        train_loader = prepare_cifar100_train_dataset(data_dir=args.data_dir, batch_size=args.batch_size, 
-                                                        num_workers=args.workers)
-        test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size, 
-                                                        num_workers=args.workers)
+        train_loader = prepare_cifar100_train_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
+                                                      num_workers=args.workers)
+        test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
+                                                    num_workers=args.workers)
+    elif args.dataset == 'cifar100_lt':
+        train_dataset = IMBALANCECIFAR100(phase='train', root=args.data_dir, imb_type=args.imb_type,
+                                          imbalance_ratio=args.imb_ratio)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+                                                   num_workers=args.workers, pin_memory=True)
+        test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
+                                                    num_workers=args.workers)
+
     else:
         raise NotImplementedError
-   
-    criterion = nn.CrossEntropyLoss().cuda()
-    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay = args.weight_decay)
 
+    criterion = nn.CrossEntropyLoss().cuda()
+    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     end = time.time()
     model.train()
@@ -186,13 +204,13 @@ def run_training(args):
         adjust_learning_rate(args, optimizer, current_epoch)
         for i, (input, target) in enumerate(train_loader):
             data_time.update(time.time() - end)
-            
+
             target = target.squeeze().long().cuda(async=True)
             input = Variable(input).cuda()
 
             output, middle_output1, middle_output2, middle_output3, \
             final_fea, middle1_fea, middle2_fea, middle3_fea = model(input)
-            
+
             loss = criterion(output, target)
             losses.update(loss.item(), input.size(0))
 
@@ -205,29 +223,28 @@ def run_training(args):
 
             temp4 = output / args.temperature
             temp4 = torch.softmax(temp4, dim=1)
-            
-            
-            loss1by4 = kd_loss_function(middle_output1, temp4.detach(), args) * (args.temperature**2)
+
+            loss1by4 = kd_loss_function(middle_output1, temp4.detach(), args) * (args.temperature ** 2)
             losses1_kd.update(loss1by4, input.size(0))
-            
-            loss2by4 = kd_loss_function(middle_output2, temp4.detach(), args) * (args.temperature**2)
+
+            loss2by4 = kd_loss_function(middle_output2, temp4.detach(), args) * (args.temperature ** 2)
             losses2_kd.update(loss2by4, input.size(0))
-            
-            loss3by4 = kd_loss_function(middle_output3, temp4.detach(), args) * (args.temperature**2)
+
+            loss3by4 = kd_loss_function(middle_output3, temp4.detach(), args) * (args.temperature ** 2)
             losses3_kd.update(loss3by4, input.size(0))
-            
-            feature_loss_1 = feature_loss_function(middle1_fea, final_fea.detach()) 
+
+            feature_loss_1 = feature_loss_function(middle1_fea, final_fea.detach())
             feature_losses_1.update(feature_loss_1, input.size(0))
-            feature_loss_2 = feature_loss_function(middle2_fea, final_fea.detach()) 
+            feature_loss_2 = feature_loss_function(middle2_fea, final_fea.detach())
             feature_losses_2.update(feature_loss_2, input.size(0))
-            feature_loss_3 = feature_loss_function(middle3_fea, final_fea.detach()) 
+            feature_loss_3 = feature_loss_function(middle3_fea, final_fea.detach())
             feature_losses_3.update(feature_loss_3, input.size(0))
 
             total_loss = (1 - args.alpha) * (loss + middle1_loss + middle2_loss + middle3_loss) + \
-                        args.alpha * (loss1by4 + loss2by4 + loss3by4) + \
-                        args.beta * (feature_loss_1 + feature_loss_2 + feature_loss_3)
+                         args.alpha * (loss1by4 + loss2by4 + loss3by4) + \
+                         args.beta * (feature_loss_1 + feature_loss_2 + feature_loss_3)
             total_losses.update(total_loss.item(), input.size(0))
-            
+
             prec1 = accuracy(output.data, target, topk=(1,))
             top1.update(prec1[0], input.size(0))
 
@@ -261,21 +278,21 @@ def run_training(args):
                 writer.add_scalar('feature_loss_1', feature_losses_1.avg, step)
                 writer.add_scalar('feature_loss_2', feature_losses_2.avg, step)
                 writer.add_scalar('feature_loss_3', feature_losses_3.avg, step)
-                
+
                 step += 1
                 logging.info("Epoch: [{0}]\t"
-                            "Iter: [{1}]\t"
-                            "Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t"
-                            "Data {data_time.val:.3f} ({data_time.avg:.3f})\t"
-                            "Loss {loss.val:.3f} ({loss.avg:.3f})\t"
-                            "Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t".format(
-                                current_epoch,
-                                i,
-                                batch_time=batch_time,
-                                data_time=data_time,
-                                loss=total_losses,
-                                top1=top1)
-                ) 
+                             "Iter: [{1}]\t"
+                             "Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t"
+                             "Data {data_time.val:.3f} ({data_time.avg:.3f})\t"
+                             "Loss {loss.val:.3f} ({loss.avg:.3f})\t"
+                             "Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t".format(
+                    current_epoch,
+                    i,
+                    batch_time=batch_time,
+                    data_time=data_time,
+                    loss=total_losses,
+                    top1=top1)
+                )
         prec1 = validate(args, test_loader, model, criterion, writer, current_epoch)
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
@@ -286,12 +303,11 @@ def run_training(args):
             'arch': args.arch,
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
-            }, is_best, filename=checkpoint_path)
+        }, is_best, filename=checkpoint_path)
         shutil.copyfile(checkpoint_path, os.path.join(args.save_path, 'checkpoint_latest.pth.tar'))
         torch.cuda.empty_cache()
 
 
-        
 def validate(args, test_loader, model, criterion, writer=None, current_epoch=0):
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -305,13 +321,12 @@ def validate(args, test_loader, model, criterion, writer=None, current_epoch=0):
     model.eval()
     end = time.time()
     for i, (input, target) in enumerate(test_loader):
-
         target = target.squeeze().long().cuda(async=True)
         input = Variable(input).cuda()
 
         output, middle_output1, middle_output2, middle_output3, \
         final_fea, middle1_fea, middle2_fea, middle3_fea = model(input)
-            
+
         loss = criterion(output, target)
         losses.update(loss.item(), input.size(0))
         middle1_loss = criterion(middle_output1, target)
@@ -320,7 +335,7 @@ def validate(args, test_loader, model, criterion, writer=None, current_epoch=0):
         middle2_losses.update(middle2_loss.item(), input.size(0))
         middle3_loss = criterion(middle_output3, target)
         middle3_losses.update(middle3_loss.item(), input.size(0))
-            
+
         prec1 = accuracy(output.data, target, topk=(1,))
         top1.update(prec1[0], input.size(0))
         middle1_prec1 = accuracy(middle_output1.data, target, topk=(1,))
@@ -336,12 +351,12 @@ def validate(args, test_loader, model, criterion, writer=None, current_epoch=0):
                  "Middle1@1 {middle1_top1.avg:.3f}\t"
                  "Middle2@1 {middle2_top1.avg:.3f}\t"
                  "Middle3@1 {middle3_top1.avg:.3f}\t".format(
-                    loss=losses,
-                    top1=top1,
-                    middle1_top1=middle1_top1,
-                    middle2_top1=middle2_top1,
-                    middle3_top1=middle3_top1))
-    
+        loss=losses,
+        top1=top1,
+        middle1_top1=middle1_top1,
+        middle2_top1=middle2_top1,
+        middle3_top1=middle3_top1))
+
     if writer is not None:
         writer.add_scalar('val_loss', losses.avg, current_epoch)
         writer.add_scalar('val_middle1_loss', middle1_losses.avg, current_epoch)
@@ -352,12 +367,12 @@ def validate(args, test_loader, model, criterion, writer=None, current_epoch=0):
         writer.add_scalar('val_middle2_acc', middle2_top1.avg, current_epoch)
         writer.add_scalar('val_middle3_acc', middle3_top1.avg, current_epoch)
         logging.info(' * Prec@1 {top1.avg:.3f}'.format(top1=top1))
-    
-        
+
     model.train()
     return top1.avg
 
-def kd_loss_function(output, target_output,args):
+
+def kd_loss_function(output, target_output, args):
     """Compute kd loss"""
     """
     para: output: middle ouptput logits.
@@ -369,9 +384,11 @@ def kd_loss_function(output, target_output,args):
     loss_kd = -torch.mean(torch.sum(output_log_softmax * target_output, dim=1))
     return loss_kd
 
+
 def feature_loss_function(fea, target_fea):
-    loss = (fea - target_fea)**2 * ((fea > 0) | (target_fea > 0)).float()
+    loss = (fea - target_fea) ** 2 * ((fea > 0) | (target_fea > 0)).float()
     return torch.abs(loss).sum()
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -391,6 +408,7 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+
 def adjust_learning_rate(args, optimizer, epoch):
     if args.warm_up and (epoch < 1):
         lr = 0.01
@@ -398,36 +416,38 @@ def adjust_learning_rate(args, optimizer, epoch):
         lr = args.lr * (args.step_ratio ** 1)
     elif 130 <= epoch < 180:
         lr = args.lr * (args.step_ratio ** 2)
-    elif epoch >=180:
+    elif epoch >= 180:
         lr = args.lr * (args.step_ratio ** 3)
     else:
         lr = args.lr
 
-    
     logging.info('Epoch [{}] learning rate = {}'.format(epoch, lr))
-    
+
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
 
 def accuracy(output, target, topk=(1,)):
     maxk = max(topk)
     batch_size = target.size(0)
-    _, pred = output.topk(maxk, 1, True, True)  
+    _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))  
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
 
     res = []
     for k in topk:
         correct_k = correct[:k].view(-1).float().sum(0)
         res.append(correct_k.mul(100.0 / batch_size))
-    
+
     return res
+
 
 def save_checkpoint(state, is_best, filename):
     torch.save(state, filename)
     if is_best:
         save_path = os.path.dirname(filename)
         shutil.copyfile(filename, os.path.join(save_path, 'model_best.path.tar'))
+
 
 if __name__ == '__main__':
     main()
