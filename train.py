@@ -163,6 +163,8 @@ def run_training(args):
         model = models.__dict__[args.arch](num_classes=100)
     elif args.dataset.startswith('cifar10'):
         model = models.__dict__[args.arch](num_classes=10)
+    elif args.dataset.startswith('imagenet'):
+        model = models.__dict__[args.arch](num_classes=1000)
     else:
         raise NotImplementedError
     model = torch.nn.DataParallel(model).cuda()
