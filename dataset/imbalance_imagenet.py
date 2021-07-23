@@ -146,5 +146,6 @@ class ImageNetLTDataLoader(DataLoader):
 
 if __name__=="__main__":
     train_loader = ImageNetLTDataLoader('./data/imagenet', batch_size=10, shuffle=True, num_workers=0)
+    test_loader = ImageNetLTDataLoader('./data/imagnet', batch_size=10, shuffle=False, training=False, num_workers=0)
     for i, (input, target) in enumerate(train_loader):
         print(i, input.shape, target.shape)

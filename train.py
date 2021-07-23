@@ -189,15 +189,20 @@ def run_training(args):
     elif args.dataset == 'cifar100_lt':
         train_dataset = IMBALANCECIFAR100(phase='train', root=args.data_dir, imb_type=args.imb_type,
                                           imbalance_ratio=args.imb_ratio)
-        print(train_dataset.get_cls_num_list())
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                                                    num_workers=args.workers, pin_memory=True)
         test_loader = prepare_cifar100_test_dataset(data_dir=args.data_dir, batch_size=args.batch_size,
                                                     num_workers=args.workers)
+    elif args.dataset == 'imagenet_lt':
+        from dataset.imbalance_imagenet import ImageNetLTDataLoader
+        train_loader = ImageNetLTDataLoader(data_dir=args.data_dir, batch_size=args.batch_size, shuffle=True,
+                                            num_workers=args.workers)
+        test_loader = ImageNetLTDataLoader(data_dir=args.data_dir, batch_size=args.batch_size, shuffle=False,
+                                           num_workers=args.workers, training=False)
+
 
     else:
         raise NotImplementedError
-    print(train_dataset.get_cls_num_list())
     criterion = nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 

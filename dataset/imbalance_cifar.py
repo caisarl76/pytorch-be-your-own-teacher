@@ -174,6 +174,7 @@ if __name__=="__main__":
     train = datasets.CIFAR100('./data', train=True, download=True, transform=transform_train)
     train_loader = torch.utils.data.DataLoader(train, batch_size=100, shuffle=True,
                                                num_workers=0, pin_memory=True)
+
     for i, (input, target) in enumerate(train_loader):
         print(i, input.shape, target)
         break
